@@ -1,135 +1,176 @@
 import pandas as pd
 import random
+import matplotlib.pyplot as plt
 
 class Battery:
-    def __init__(self, capacity, charge_rate, discharge_rate, initial_charge=0, efficiency=0.9):
+    def __init__(self, capacity, charge_rate, discharge_rate, initial_charge, efficiency=0.9):
         """
-        Initialize the battery instance.
-        
+        A simple model of a battery with charging and discharging capabilities.
+
         :param capacity: Maximum energy capacity of the battery in kWh.
         :param charge_rate: Maximum charging rate in kW.
         :param discharge_rate: Maximum discharging rate in kW.
         :param initial_charge: Initial state of charge of the battery in kWh.
-        :param efficiency: Round-trip efficiency of the battery.
+        :param efficiency: Charging and discharging efficiency of the battery.
         """
         self.capacity = capacity
+        self.initial_charge = initial_charge
         self.charge_rate = charge_rate
         self.discharge_rate = discharge_rate
         self.efficiency = efficiency
-        self.state_of_charge = min(initial_charge, capacity)  # Ensure initial SoC is within capacity
+        self.state_of_charge = min(self.initial_charge, self.capacity)
+
+    def reset(self):
+        """
+        Reset the battery to its initial state of charge.
+        """
+        self.state_of_charge = min(self.initial_charge, self.capacity)
 
     def charge(self, power, duration):
         """
         Charge the battery with a specified power over a duration.
-        
+
         :param power: Power in kW to charge the battery.
         :param duration: Duration in minutes for which the battery is charged.
         """
-        power = min(power, self.charge_rate)  # Limit power to max charge rate
-        energy_added = power * (duration / 60)  # Convert power and time to kWh
-        self.state_of_charge += energy_added * self.efficiency  # Adjust for efficiency
-        self.state_of_charge = min(self.state_of_charge, self.capacity)  # Limit to max capacity
+        power = min(power, self.charge_rate)
+        energy_added = power * (duration / 60) * self.efficiency
+        self.state_of_charge = min(self.state_of_charge + energy_added, self.capacity)
 
     def discharge(self, power, duration):
         """
         Discharge the battery with a specified power over a duration.
-        
+
         :param power: Power in kW to discharge the battery.
         :param duration: Duration in minutes for which the battery is discharged.
         """
-        power = min(power, self.discharge_rate)  # Limit power to max discharge rate
-        energy_removed = power * (duration / 60)  # Convert power and time to kWh
-        self.state_of_charge -= energy_removed / self.efficiency  # Adjust for efficiency
-        self.state_of_charge = max(self.state_of_charge, 0)  # Ensure SoC doesn't go below 0
+        power = min(power, self.discharge_rate)
+        energy_removed = power * (duration / 60) / self.efficiency
+        self.state_of_charge = max(self.state_of_charge - energy_removed, 0)
 
     def get_state_of_charge(self):
         """
         Return the current state of charge of the battery.
+
+        :return: State of charge in kWh.
         """
         return self.state_of_charge
 
-class TimeSeriesAPI:
-    def __init__(self, battery, market_data):
+class BatteryEnv:
+    def __init__(self, capacity=100, charge_rate=50, discharge_rate=50, initial_charge=50, data='test_data.csv'):
         """
-        Initialize the time series API.
-        
-        :param battery: An instance of the Battery class.
-        :param market_data: Time series data of the market, like energy demand, prices.
+        Environment for simulating battery operation in a market context.
         """
-        self.battery = battery
-        self.market_data = market_data
+        self.battery = Battery(capacity, charge_rate, discharge_rate, initial_charge)
+        self.market_data = pd.read_csv(data)
+        self.reset()
+
+    def reset(self):
         self.current_step = 0
-        self.total_profit = 0  # Initialize total profit
+        self.total_profit = 0
+        self.battery.reset()
+        return self.market_data.iloc[self.current_step], self.get_info()
 
-    def get_next_step(self):
-        """
-        Dispenses the next row of data along with the current battery state of charge.
-        
-        :return: A dictionary containing market data and battery SoC for the current step.
-        """
-        if self.current_step < len(self.market_data):
-            step_data = {
-                'data': self.market_data.iloc[self.current_step],
-                'battery_soc': self.battery.get_state_of_charge(),
-                'total_profit': self.total_profit
-            }
-            self.current_step += 1
-            return step_data
-        else:
-            return "End of data series"
+    def step(self, action):
+        if self.current_step >= len(self.market_data) - 1:
+            return None, None
 
-    def apply_action(self, action):
-        """
-        Apply an action to the battery. Positive action values indicate charging,
-        negative values indicate discharging, and zero indicates no action.
-        
-        :param action: Power level for the action in kW (positive for charge, negative for discharge).
-        """
-        duration = 5  # Duration is 5 minutes
-        market_price = self.market_data.iloc[self.current_step - 1]['Market_Price']
-        profit_delta = 0
+        market_price = self.market_data.iloc[self.current_step]['Market_Price']
+        profit_delta = self.process_action(action, market_price)
+        self.current_step += 1
 
-        if action > 0:  # Charging
+        return self.market_data.iloc[self.current_step], self.get_info(profit_delta)
+
+    def process_action(self, action, market_price):
+        duration = 5
+        if action > 0:
             self.battery.charge(action, duration)
-            cost = action * (duration / 60) * market_price
-            self.total_profit -= cost  # Charging costs money
-            profit_delta = -cost
-
-        elif action < 0:  # Discharging
+            return -action * (duration / 60) * market_price
+        elif action < 0:
             self.battery.discharge(-action, duration)
-            revenue = -action * (duration / 60) * market_price
-            self.total_profit += revenue  # Discharging earns money
-            profit_delta = revenue
+            return -action * (duration / 60) * market_price
+        return 0
 
-        return profit_delta
+    def get_info(self, profit_delta=0):
+        self.total_profit += profit_delta
+        remaining_steps = len(self.market_data) - self.current_step - 1
+        return {
+            'total_profit': self.total_profit,
+            'profit_delta': profit_delta,
+            'battery_soc': self.battery.get_state_of_charge(),
+            'remaining_steps': remaining_steps
+        }
 
-# Function to read market data
-def read_market_data(filename):
-    return pd.read_csv(filename)
+def random_action(max_charge_rate, max_discharge_rate):
+    return random.choice([max_charge_rate, -max_discharge_rate, 0]) * random.uniform(0, 1)
 
-# Random decision-making function
-def random_decision(battery):
+def plot_results(actions, profits, socs, market_prices):
     """
-    Randomly decide to charge, discharge, or hold. The magnitude of the action is also random.
-    """
-    action = random.choice([battery.charge_rate, -battery.discharge_rate, 0])  # Choose action type
-    magnitude = random.uniform(0, 1)  # Random magnitude from 0 to 1
-    return action * magnitude
+    Plot the results of the simulation including actions, market prices, battery state of charge, and cumulative profits.
 
-def run_simulation(api, market_data):
-    for index, row in market_data.iterrows():
-        step_data = api.get_next_step()  # Fetching the current step data
-        if isinstance(step_data, dict):  # Check if it's the end of the series
-            action = random_decision(api.battery)
-            profit_delta = api.apply_action(action)
-            print(f"Step: {api.current_step:>5} | Action: {action:>7.2f} kW | Profit Delta: {profit_delta:>8.2f} | Total Profit: ${api.total_profit:>10.2f} | Battery SoC: {api.battery.get_state_of_charge():>5.2f} kWh")
-        else:
-            print(step_data)
+    :param actions: List of actions taken at each step.
+    :param profits: List of total profits at each step.
+    :param socs: List of battery state of charge at each step.
+    :param market_prices: List of market prices at each step.
+    """
+    # Number of steps in the simulation
+    steps = list(range(1, len(actions) + 1))
+
+    # Setting up the plot
+    plt.figure(figsize=(7, 7))
+
+    # Plotting Actions
+    plt.subplot(4, 1, 1)
+    plt.plot(steps, actions, label='Actions', color='blue')
+    plt.ylabel('Action (kW)')
+    plt.title('Battery Actions Over Time')
+
+    # Plotting Market Prices
+    plt.subplot(4, 1, 2)
+    plt.plot(steps, market_prices, label='Market Price', color='green')
+    plt.ylabel('Market Price ($/kWh)')
+    plt.title('Market Price Over Time')
+
+    # Plotting Total Profit
+    plt.subplot(4, 1, 3)
+    plt.plot(steps, profits, label='Total Profit', color='red')
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.ylabel('Total Profit ($)')
+    plt.title('Total Profit Over Time')
+
+    # Plotting Battery State of Charge
+    plt.subplot(4, 1, 4)
+    plt.plot(steps, socs, label='Battery SoC', color='purple')
+    plt.xlabel('Time Step')
+    plt.ylabel('State of Charge (kWh)')
+    plt.title('Battery State of Charge Over Time')
+
+    plt.tight_layout()
+    plt.show()
+
+
+def main():
+    env = BatteryEnv()
+    step_data, info = env.reset()
+
+    actions, profits, socs, market_prices = [], [], [], []
+
+    while True:
+        action = random_action(env.battery.charge_rate, env.battery.discharge_rate)
+        step_data, info = env.step(action)
+
+        if step_data is None:
             break
 
-# Main execution
-market_data = read_market_data('market_data.csv')
-battery = Battery(capacity=100, charge_rate=50, discharge_rate=50, initial_charge=0)
-api = TimeSeriesAPI(battery, market_data)
+        actions.append(action)
+        profits.append(info['total_profit'])
+        socs.append(info['battery_soc'])
+        market_prices.append(step_data['Market_Price'])
 
-run_simulation(api, market_data)
+    plot_results(actions, profits, socs, market_prices)
+
+
+
+
+if __name__ == "__main__":
+    main()

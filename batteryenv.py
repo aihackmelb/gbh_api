@@ -1,6 +1,7 @@
 import pandas as pd
 import random
-import matplotlib.pyplot as plt
+
+from plotting import plot_results
 
 class Battery:
     def __init__(self, capacity, charge_rate, discharge_rate, initial_charge, efficiency=0.9):
@@ -34,8 +35,10 @@ class Battery:
         :param duration: Duration in minutes for which the battery is charged.
         """
         power = min(power, self.charge_rate)
-        energy_added = power * (duration / 60) * self.efficiency
-        self.state_of_charge = min(self.state_of_charge + energy_added, self.capacity)
+        energy_add_order = power * (duration / 60) * self.efficiency
+        energy_added = min(energy_add_order, self.capacity - self.state_of_charge)
+        self.state_of_charge = min(self.state_of_charge + energy_add_order, self.capacity)
+        return energy_added
 
     def discharge(self, power, duration):
         """
@@ -45,8 +48,10 @@ class Battery:
         :param duration: Duration in minutes for which the battery is discharged.
         """
         power = min(power, self.discharge_rate)
-        energy_removed = power * (duration / 60) / self.efficiency
-        self.state_of_charge = max(self.state_of_charge - energy_removed, 0)
+        energy_remove_order = power * (duration / 60) / self.efficiency
+        energy_removed = min(energy_remove_order, self.state_of_charge)
+        self.state_of_charge = max(self.state_of_charge - energy_remove_order, 0)
+        return energy_removed
 
     def get_state_of_charge(self):
         """
@@ -84,11 +89,11 @@ class BatteryEnv:
     def process_action(self, action, market_price):
         duration = 5
         if action > 0:
-            self.battery.charge(action, duration)
-            return -action * (duration / 60) * market_price
+            energy_added = self.battery.charge(action, duration)
+            return -energy_added * (duration / 60) * market_price
         elif action < 0:
-            self.battery.discharge(-action, duration)
-            return -action * (duration / 60) * market_price
+            energy_removed = self.battery.discharge(-action, duration)
+            return energy_removed * (duration / 60) * market_price
         return 0
 
     def get_info(self, profit_delta=0):
@@ -103,51 +108,6 @@ class BatteryEnv:
 
 def random_action(max_charge_rate, max_discharge_rate):
     return random.choice([max_charge_rate, -max_discharge_rate, 0]) * random.uniform(0, 1)
-
-def plot_results(actions, profits, socs, market_prices):
-    """
-    Plot the results of the simulation including actions, market prices, battery state of charge, and cumulative profits.
-
-    :param actions: List of actions taken at each step.
-    :param profits: List of total profits at each step.
-    :param socs: List of battery state of charge at each step.
-    :param market_prices: List of market prices at each step.
-    """
-    # Number of steps in the simulation
-    steps = list(range(1, len(actions) + 1))
-
-    # Setting up the plot
-    plt.figure(figsize=(7, 7))
-
-    # Plotting Actions
-    plt.subplot(4, 1, 1)
-    plt.plot(steps, actions, label='Actions', color='blue')
-    plt.ylabel('Action (kW)')
-    plt.title('Battery Actions Over Time')
-
-    # Plotting Market Prices
-    plt.subplot(4, 1, 2)
-    plt.plot(steps, market_prices, label='Market Price', color='green')
-    plt.ylabel('Market Price ($/kWh)')
-    plt.title('Market Price Over Time')
-
-    # Plotting Total Profit
-    plt.subplot(4, 1, 3)
-    plt.plot(steps, profits, label='Total Profit', color='red')
-    plt.axhline(y=0, color='r', linestyle='--')
-    plt.ylabel('Total Profit ($)')
-    plt.title('Total Profit Over Time')
-
-    # Plotting Battery State of Charge
-    plt.subplot(4, 1, 4)
-    plt.plot(steps, socs, label='Battery SoC', color='purple')
-    plt.xlabel('Time Step')
-    plt.ylabel('State of Charge (kWh)')
-    plt.title('Battery State of Charge Over Time')
-
-    plt.tight_layout()
-    plt.show()
-
 
 def main():
     env = BatteryEnv()

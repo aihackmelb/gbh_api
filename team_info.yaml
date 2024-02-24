@@ -1,0 +1,15 @@
+# Replace the following content with your team information.
+
+team:
+  name: "Team Green"
+  description: "We are a team of data scientists and software engineers."
+  members:
+    - name: "Alice Smith"
+      role: "Data Scientist"
+      email: "alice@example.com"
+    - name: "Bob Jones"
+      role: "Software Engineer"
+      email: "bob@example.com"
+    - name: "Fiona Brown"
+      role: "Research Analyst"
+      email: "fiona@example.com"

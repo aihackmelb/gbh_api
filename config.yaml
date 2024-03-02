@@ -1,0 +1,6 @@
+# Submission Configuration
+
+policy:
+  class_name: "RollingAveragePolicy"
+  parameters:
+    window_size: 100

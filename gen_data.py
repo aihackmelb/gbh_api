@@ -1,3 +1,5 @@
+# NOT INCLUDED IN FINAL REPO
+
 import pandas as pd
 import numpy as np
 import datetime
@@ -31,4 +33,4 @@ def generate_market_data(start_date, end_date, filename):
     data.to_csv(filename, index=False)
 
 # Usage
-generate_market_data(start_date='2024-01-01', end_date='2024-01-02', filename='test_data.csv')
+generate_market_data(start_date='2024-01-01', end_date='2024-01-02', filename='train.csv')
